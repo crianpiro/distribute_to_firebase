@@ -3,7 +3,7 @@ on:
   push:
 
 jobs:
-  test:
+  test_action:
     runs-on: ubuntu-latest
     steps:
 
@@ -15,8 +15,8 @@ jobs:
         run: |
           COMMIT_MESSAGE=$(git log -1 --pretty=%B)
 
-          DIST_GROUPS=$(echo "$COMMIT_MESSAGE" | sed -n '/<!-- START - Distribution groups -->/,/<!-- END - Distribution groups -->/p' | sed '1d;$d')
-          NOTES=$(echo "$COMMIT_MESSAGE" | sed -n '/<!-- START - What was done -->/,/<!-- END - What was done -->/p' | sed '1d;$d')
+          DIST_GROUPS=$(echo "$COMMIT_MESSAGE" | sed -n '/<!-- SDG -->/,/<!-- EDG -->/p' | sed '1d;$d')
+          NOTES=$(echo "$COMMIT_MESSAGE" | sed -n '/<!-- SWWD -->/,/<!-- EWWD -->/p' | sed '1d;$d')
 
           echo "DISTRIBUTION_GROUPS=$DIST_GROUPS" >> $GITHUB_ENV
           echo "RELEASE_NOTES<<EOF" >> $GITHUB_ENV

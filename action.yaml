@@ -60,8 +60,8 @@ runs:
       shell: bash
       run: |
        firebase appdistribution:distribute \
-          ${{ inputs.file }} \
-          --app ${{ inputs.app }} \
+          ${{ inputs.artifact }} \
+          --app ${{ inputs.app-id }} \
           --testers "${{ inputs.testers }}" \
           --testers-file "${{ inputs.testers-file }}" \
           --groups "${{ inputs.groups }}" \
