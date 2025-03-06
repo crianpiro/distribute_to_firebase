@@ -1,0 +1,33 @@
+name: Launch Firebase App Distribution
+on:
+  push:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Extract release information
+        id: extract_release_info
+        run: |
+          COMMIT_MESSAGE=$(git log -1 --pretty=%B)
+
+          DIST_GROUPS=$(echo "$COMMIT_MESSAGE" | sed -n '/<!-- START - Distribution groups -->/,/<!-- END - Distribution groups -->/p' | sed '1d;$d')
+          NOTES=$(echo "$COMMIT_MESSAGE" | sed -n '/<!-- START - What was done -->/,/<!-- END - What was done -->/p' | sed '1d;$d')
+
+          echo "DISTRIBUTION_GROUPS=$DIST_GROUPS" >> $GITHUB_ENV
+          echo "RELEASE_NOTES<<EOF" >> $GITHUB_ENV
+          echo "$NOTES" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+
+      - name: Run crianpiro/distribute_to_firebase@v1
+        uses: ./
+        with:
+          artifact: ./artifacts/app-debug.apk
+          app-id: ${{ secrets.FIREBASE_APP_ID }}
+          credentials: ${{ secrets.FIREBASE_CREDENTIALS }}
+          groups: ${{ env.DISTRIBUTION_GROUPS }}
+          release-notes: ${{ env.RELEASE_NOTES }}

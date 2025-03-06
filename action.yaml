@@ -1,0 +1,71 @@
+name: Distribute artifact using Firebase App Distribution
+description: Upload artifacts to Firebase App Distribution within seconds
+branding:
+  color: green
+  icon: box
+inputs:
+  artifact:
+    description: The path to the artifact you want to distribute
+    required: true
+  app-id:
+    description: The Firebase App ID of the app you want to distribute.
+    required: true
+  credentials:
+    description: Content of the service account credentials file
+    required: false
+  credentials-file:
+    description: Path to the Google service account credentials file.
+    required: false
+  release-notes:
+    description: The release notes of the version you want to distribute.
+    required: false
+  release-notes-file:
+    description: Path to the file containing the release notes of the version you want to distribute.
+    required: false
+  testers:
+    description: The email addresses of the testers you want to invite to this version.
+    required: false
+  testers-file:
+    description: Path to the file containing the email addresses of the testers you want to invite to this version.
+    required: false
+  groups:
+    description: The groups of testers you want to share this version with (refer to Manage testers). Groups are specified using group aliases.
+    required: false
+  groups-file:
+    description: Path to the file containing the groups of testers you want to share this version with (refer to Manage testers). Groups are specified using group aliases.
+    required: false
+
+runs:
+  using: composite
+  steps:
+    - name: Install Firebase CLI
+      shell: bash
+      run: |
+        curl -sL https://firebase.tools | bash
+    
+    - name: Set GOOGLE_APPLICATION_CREDENTIALS if credentials-file is provided
+      shell: bash
+      if: ${{ inputs.credentials == null && inputs.credentials-file != null }}
+      run: |
+        echo "GOOGLE_APPLICATION_CREDENTIALS=${{ inputs.credentials-file }}" >> $GITHUB_ENV
+
+    - name: Set GOOGLE_APPLICATION_CREDENTIALS if credentials is provided
+      shell: bash
+      if: ${{ inputs.credentials != null }}
+      run: |
+        echo '${{ inputs.credentials }}' > $RUNNER_TEMP/credentials.json
+        echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/credentials.json" >> $GITHUB_ENV
+    
+    - name: Distribute artifact to Firebase
+      shell: bash
+      run: |
+       firebase appdistribution:distribute \
+          ${{ inputs.file }} \
+          --app ${{ inputs.app }} \
+          --testers "${{ inputs.testers }}" \
+          --testers-file "${{ inputs.testers-file }}" \
+          --groups "${{ inputs.groups }}" \
+          --groups-file "${{ inputs.groups-file }}" \
+          --release-notes "${{ inputs.release-notes }}" \
+          --release-notes-file "${{ inputs.release-notes-file }}" \
+          --debug
