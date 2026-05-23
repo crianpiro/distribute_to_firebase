@@ -1,16 +1,24 @@
-name: Launch Firebase App Distribution
+name: Integration test - Firebase App Distribution
+
+# Manually triggered integration test for the action. It requires the
+# FIREBASE_APP_ID and FIREBASE_CREDENTIALS repository secrets to be set, and a
+# real artifact at the given path. Run it from the Actions tab → "Run workflow".
 on:
-  push:
+  workflow_dispatch:
+    inputs:
+      artifact:
+        description: Path to the artifact to distribute
+        required: true
+        default: ./artifacts/app-debug.apk
 
 jobs:
   test_action:
     runs-on: ubuntu-latest
     steps:
-
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Extract release information
+      - name: Extract release information from the latest commit message
         id: extract_release_info
         run: |
           COMMIT_MESSAGE=$(git log -1 --pretty=%B)
@@ -18,16 +26,22 @@ jobs:
           DIST_GROUPS=$(echo "$COMMIT_MESSAGE" | sed -n '/<!-- SDG -->/,/<!-- EDG -->/p' | sed '1d;$d')
           NOTES=$(echo "$COMMIT_MESSAGE" | sed -n '/<!-- SWWD -->/,/<!-- EWWD -->/p' | sed '1d;$d')
 
-          echo "DISTRIBUTION_GROUPS=$DIST_GROUPS" >> $GITHUB_ENV
-          echo "RELEASE_NOTES<<EOF" >> $GITHUB_ENV
-          echo "$NOTES" >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
+          echo "DISTRIBUTION_GROUPS=$DIST_GROUPS" >> "$GITHUB_ENV"
+          {
+            echo "RELEASE_NOTES<<EOF"
+            echo "$NOTES"
+            echo "EOF"
+          } >> "$GITHUB_ENV"
 
-      - name: Run crianpiro/distribute_to_firebase@v1
+      - name: Distribute to Firebase App Distribution
+        id: distribute
         uses: ./
         with:
-          artifact: ./artifacts/app-debug.apk
+          artifact: ${{ inputs.artifact }}
           app-id: ${{ secrets.FIREBASE_APP_ID }}
           credentials: ${{ secrets.FIREBASE_CREDENTIALS }}
           groups: ${{ env.DISTRIBUTION_GROUPS }}
           release-notes: ${{ env.RELEASE_NOTES }}
+
+      - name: Print release link
+        run: echo "Release available at ${{ steps.distribute.outputs.release-link }}"

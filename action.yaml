@@ -1,39 +1,56 @@
 name: Distribute artifact using Firebase App Distribution
-description: Upload artifacts to Firebase App Distribution within seconds
+description: Upload Android/iOS artifacts (APK, AAB, IPA) to Firebase App Distribution.
+author: Cristian Andres Picon Rodriguez
+
 branding:
-  color: green
-  icon: box
+  color: orange
+  icon: upload-cloud
+
 inputs:
   artifact:
-    description: The path to the artifact you want to distribute
+    description: Path to the artifact (.apk, .aab or .ipa) you want to distribute.
     required: true
   app-id:
     description: The Firebase App ID of the app you want to distribute.
     required: true
   credentials:
-    description: Content of the service account credentials file
+    description: >-
+      Contents of the Google service account credentials JSON. Provide this OR
+      `credentials-file`. Pass it through a secret, e.g. `${{ secrets.FIREBASE_CREDENTIALS }}`.
     required: false
   credentials-file:
-    description: Path to the Google service account credentials file.
+    description: >-
+      Path to the Google service account credentials JSON file. Provide this OR `credentials`.
     required: false
   release-notes:
-    description: The release notes of the version you want to distribute.
+    description: Release notes for the version you want to distribute.
     required: false
   release-notes-file:
-    description: Path to the file containing the release notes of the version you want to distribute.
+    description: Path to a file containing the release notes.
     required: false
   testers:
-    description: The email addresses of the testers you want to invite to this version.
+    description: Comma-separated email addresses of the testers to invite to this release.
     required: false
   testers-file:
-    description: Path to the file containing the email addresses of the testers you want to invite to this version.
+    description: Path to a file containing the tester email addresses.
     required: false
   groups:
-    description: The groups of testers you want to share this version with (refer to Manage testers). Groups are specified using group aliases.
+    description: Comma-separated tester group aliases to share this release with.
     required: false
   groups-file:
-    description: Path to the file containing the groups of testers you want to share this version with (refer to Manage testers). Groups are specified using group aliases.
+    description: Path to a file containing the tester group aliases.
     required: false
+
+outputs:
+  release-link:
+    description: Tester-facing link to view release notes and install the app (testingUri).
+    value: ${{ steps.distribute.outputs.release-link }}
+  console-link:
+    description: Link to the release in the Firebase console (firebaseConsoleUri).
+    value: ${{ steps.distribute.outputs.console-link }}
+  binary-download-link:
+    description: Signed link that directly downloads the binary. Expires after one hour (binaryDownloadUri).
+    value: ${{ steps.distribute.outputs.binary-download-link }}
 
 runs:
   using: composite
@@ -41,31 +58,78 @@ runs:
     - name: Install Firebase CLI
       shell: bash
       run: |
-        curl -sL https://firebase.tools | bash
-    
-    - name: Set GOOGLE_APPLICATION_CREDENTIALS if credentials-file is provided
-      shell: bash
-      if: ${{ inputs.credentials == null && inputs.credentials-file != null }}
-      run: |
-        echo "GOOGLE_APPLICATION_CREDENTIALS=${{ inputs.credentials-file }}" >> $GITHUB_ENV
+        if command -v firebase >/dev/null 2>&1; then
+          echo "Firebase CLI already installed: $(firebase --version)"
+        else
+          curl -sL https://firebase.tools | bash
+        fi
 
-    - name: Set GOOGLE_APPLICATION_CREDENTIALS if credentials is provided
+    - name: Resolve Google service account credentials
       shell: bash
-      if: ${{ inputs.credentials != null }}
+      env:
+        FAD_CREDENTIALS: ${{ inputs.credentials }}
+        FAD_CREDENTIALS_FILE: ${{ inputs.credentials-file }}
       run: |
-        echo '${{ inputs.credentials }}' > $RUNNER_TEMP/credentials.json
-        echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/credentials.json" >> $GITHUB_ENV
-    
-    - name: Distribute artifact to Firebase
+        if [ -n "$FAD_CREDENTIALS" ]; then
+          cred_path="$RUNNER_TEMP/firebase-credentials.json"
+          printf '%s' "$FAD_CREDENTIALS" > "$cred_path"
+          chmod 600 "$cred_path"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$cred_path" >> "$GITHUB_ENV"
+        elif [ -n "$FAD_CREDENTIALS_FILE" ]; then
+          if [ ! -f "$FAD_CREDENTIALS_FILE" ]; then
+            echo "::error::credentials-file '$FAD_CREDENTIALS_FILE' was not found." >&2
+            exit 1
+          fi
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$FAD_CREDENTIALS_FILE" >> "$GITHUB_ENV"
+        else
+          echo "::error::Provide either 'credentials' (JSON contents) or 'credentials-file' (path)." >&2
+          exit 1
+        fi
+
+    - name: Distribute artifact to Firebase App Distribution
+      id: distribute
       shell: bash
+      env:
+        FAD_ARTIFACT: ${{ inputs.artifact }}
+        FAD_APP_ID: ${{ inputs.app-id }}
+        FAD_TESTERS: ${{ inputs.testers }}
+        FAD_TESTERS_FILE: ${{ inputs.testers-file }}
+        FAD_GROUPS: ${{ inputs.groups }}
+        FAD_GROUPS_FILE: ${{ inputs.groups-file }}
+        FAD_RELEASE_NOTES: ${{ inputs.release-notes }}
+        FAD_RELEASE_NOTES_FILE: ${{ inputs.release-notes-file }}
       run: |
-       firebase appdistribution:distribute \
-          ${{ inputs.artifact }} \
-          --app ${{ inputs.app-id }} \
-          --testers "${{ inputs.testers }}" \
-          --testers-file "${{ inputs.testers-file }}" \
-          --groups "${{ inputs.groups }}" \
-          --groups-file "${{ inputs.groups-file }}" \
-          --release-notes "${{ inputs.release-notes }}" \
-          --release-notes-file "${{ inputs.release-notes-file }}" \
-          --debug
+        # Note: inputs are routed through FAD_*-prefixed env vars (instead of being
+        # interpolated into this script) to avoid shell injection, and to dodge bash
+        # built-ins such as $GROUPS that would otherwise shadow the value.
+        if [ ! -f "$FAD_ARTIFACT" ]; then
+          echo "::error::Artifact not found at '$FAD_ARTIFACT'." >&2
+          exit 1
+        fi
+
+        # Build the argument list, skipping any optional input that is empty so we
+        # never pass flags like `--testers-file ""` (which the CLI tries to read).
+        args=(--app "$FAD_APP_ID")
+        [ -n "$FAD_TESTERS" ]            && args+=(--testers "$FAD_TESTERS")
+        [ -n "$FAD_TESTERS_FILE" ]       && args+=(--testers-file "$FAD_TESTERS_FILE")
+        [ -n "$FAD_GROUPS" ]             && args+=(--groups "$FAD_GROUPS")
+        [ -n "$FAD_GROUPS_FILE" ]        && args+=(--groups-file "$FAD_GROUPS_FILE")
+        [ -n "$FAD_RELEASE_NOTES" ]      && args+=(--release-notes "$FAD_RELEASE_NOTES")
+        [ -n "$FAD_RELEASE_NOTES_FILE" ] && args+=(--release-notes-file "$FAD_RELEASE_NOTES_FILE")
+
+        echo "Distributing '$FAD_ARTIFACT' to Firebase App Distribution (app: $FAD_APP_ID)…"
+
+        if ! result="$(firebase appdistribution:distribute "$FAD_ARTIFACT" "${args[@]}" --json)"; then
+          echo "$result"
+          echo "::error::Firebase App Distribution upload failed." >&2
+          exit 1
+        fi
+        echo "$result"
+
+        # Pull links out of the JSON result regardless of nesting depth.
+        field() { jq -r --arg k "$1" 'first(.. | objects | .[$k]? // empty) // ""' <<<"$result"; }
+        {
+          echo "release-link=$(field testingUri)"
+          echo "console-link=$(field firebaseConsoleUri)"
+          echo "binary-download-link=$(field binaryDownloadUri)"
+        } >> "$GITHUB_OUTPUT"

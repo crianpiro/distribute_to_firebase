@@ -1,0 +1,16 @@
+# macOS
+.DS_Store
+
+# Build artifacts
+*.apk
+*.aab
+*.ipa
+artifacts/
+
+# Firebase
+firebase-debug.log
+.firebase/
+
+# Credentials (never commit service account keys)
+*credentials*.json
+*service-account*.json
