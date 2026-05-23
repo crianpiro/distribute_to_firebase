@@ -16,7 +16,7 @@ inputs:
   credentials:
     description: >-
       Contents of the Google service account credentials JSON. Provide this OR
-      `credentials-file`. Pass it through a secret, e.g. `${{ secrets.FIREBASE_CREDENTIALS }}`.
+      `credentials-file`. Pass it through a secret, e.g.
     required: false
   credentials-file:
     description: >-
