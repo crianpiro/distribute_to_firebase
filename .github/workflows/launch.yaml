@@ -1,22 +1,43 @@
 name: Integration test - Firebase App Distribution
 
-# Manually triggered integration test for the action. It requires the
-# FIREBASE_APP_ID and FIREBASE_CREDENTIALS repository secrets to be set, and a
-# real artifact at the given path. Run it from the Actions tab → "Run workflow".
+# Manually triggered integration test for the action. It needs:
+#   - secrets: FIREBASE_APP_ID, FIREBASE_CREDENTIALS
+#   - a real artifact, fetched at runtime from a URL (the repo no longer ships one).
+#
+# Provide the artifact URL either by passing `artifact_url` when dispatching, or by
+# setting a TEST_ARTIFACT_URL repository variable. Firebase validates the binary, so
+# it must be a genuine APK/AAB/IPA (an empty placeholder is rejected). For a private
+# source (e.g. a GitHub release asset via the API, or a private bucket), set a
+# TEST_ARTIFACT_TOKEN secret and it will be sent as a Bearer token.
 on:
   workflow_dispatch:
     inputs:
-      artifact:
-        description: Path to the artifact to distribute
-        required: true
-        default: ./artifacts/app-debug.apk
+      artifact_url:
+        description: URL to download the test artifact (APK/AAB/IPA) from. Defaults to the TEST_ARTIFACT_URL repo variable.
+        required: false
+        default: ""
 
 jobs:
   test_action:
     runs-on: ubuntu-latest
+    env:
+      ARTIFACT_URL: ${{ inputs.artifact_url || vars.TEST_ARTIFACT_URL }}
+      ARTIFACT_TOKEN: ${{ secrets.TEST_ARTIFACT_TOKEN }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Download test artifact
+        run: |
+          if [ -z "$ARTIFACT_URL" ]; then
+            echo "::error::No artifact URL. Pass 'artifact_url' when dispatching, or set the TEST_ARTIFACT_URL repository variable." >&2
+            exit 1
+          fi
+          echo "Downloading test artifact from $ARTIFACT_URL"
+          auth=()
+          [ -n "$ARTIFACT_TOKEN" ] && auth=(-H "Authorization: Bearer $ARTIFACT_TOKEN")
+          curl -fSL "${auth[@]}" -H "Accept: application/octet-stream" "$ARTIFACT_URL" -o app-debug.apk
+          ls -lh app-debug.apk
 
       - name: Extract release information from the latest commit message
         id: extract_release_info
@@ -37,7 +58,7 @@ jobs:
         id: distribute
         uses: ./
         with:
-          artifact: ${{ inputs.artifact }}
+          artifact: ./app-debug.apk
           app-id: ${{ secrets.FIREBASE_APP_ID }}
           credentials: ${{ secrets.FIREBASE_CREDENTIALS }}
           groups: ${{ env.DISTRIBUTION_GROUPS }}
