@@ -58,11 +58,27 @@ runs:
     - name: Install Firebase CLI
       shell: bash
       run: |
+        set -euo pipefail
         if command -v firebase >/dev/null 2>&1; then
           echo "Firebase CLI already installed: $(firebase --version)"
-        else
-          curl -sL https://firebase.tools | bash
+          exit 0
         fi
+
+        # The standalone binary, into a directory the runner user owns. The
+        # firebase.tools install script copies it to /usr/local/bin with sudo,
+        # which fails on a self-hosted runner without passwordless sudo.
+        case "$RUNNER_OS" in
+          Linux)   platform=linux exe=firebase ;;
+          macOS)   platform=macos exe=firebase ;;
+          Windows) platform=win   exe=firebase.exe ;;
+          *) echo "::error::Unsupported runner OS '$RUNNER_OS'." >&2; exit 1 ;;
+        esac
+        dir="$RUNNER_TEMP/firebase-tools"
+        mkdir -p "$dir"
+        curl -fsSL --retry 3 -o "$dir/$exe" "https://firebase.tools/bin/$platform/latest"
+        chmod +x "$dir/$exe"
+        echo "$dir" >> "$GITHUB_PATH"
+        echo "Installed Firebase CLI: $("$dir/$exe" --version)"
 
     - name: Resolve Google service account credentials
       shell: bash
